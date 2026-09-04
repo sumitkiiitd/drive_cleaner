@@ -1,10 +1,11 @@
-# Drive Duplicate Photo Cleaner
+# Drive Duplicate File Cleaner
 
-A small, static, client-side-only web app that finds duplicate photos in your
-Google Drive and lets you review and move them to Trash. It's plain
-HTML/CSS/JS with no build step and no backend server — it talks to the
-Google Drive API directly from your browser using your own OAuth credentials.
-Nothing you scan or delete ever passes through a third-party server.
+A small, static, client-side-only web app that finds duplicate files across
+your entire Google Drive — photos, videos, PDFs, and other documents — and
+lets you review and move them to Trash. It's plain HTML/CSS/JS with no build
+step and no backend server — it talks to the Google Drive API directly from
+your browser using your own OAuth credentials. Nothing you scan or delete
+ever passes through a third-party server.
 
 **Safety first:** the app never permanently deletes anything. Files you
 choose to remove are moved to your Google Drive **Trash**, exactly like
@@ -13,12 +14,23 @@ is emptied.
 
 ## How duplicate detection works
 
-The app lists your image files and groups them by Drive's `md5Checksum`
+The app scans your whole Drive and groups files by Drive's `md5Checksum`
 (the content hash Drive computes for every uploaded file). Only files that
 are byte-for-byte identical end up in the same group — this avoids false
-positives from similar-but-different photos. Within each group, the oldest
-file (by creation time) is kept by default; you can change which copy to
-keep, or which copies to delete, before doing anything.
+positives from similar-but-different files. Results are organized into
+**Photos, Videos, PDFs, Docs, and Others** tabs so you can review one
+category at a time, and each file shows its Drive folder path so you know
+exactly where it lives.
+
+Within each group, the oldest file (by creation time) is kept by default;
+you can switch the default rule to "keep newest", override which copy to
+keep on a per-group basis, or fine-tune the exact files to delete with
+per-file checkboxes. You can delete a single file immediately, or select
+files across groups and delete them all at once.
+
+Native Google Docs, Sheets, and Slides don't have a content checksum (they
+aren't stored as flat files), so they're not included in duplicate
+detection — this is a Drive API limitation, not a setting.
 
 ## For end users
 
@@ -68,16 +80,21 @@ or configure this.
 
 ## 3. Scan and clean up
 
-1. Click **Scan for duplicate photos**. By default, only files you own are
+1. Click **Scan for duplicate files**. By default, only files you own are
    scanned; check **Include shared drives** if you also want to scan shared
-   drives you have access to.
-2. Review each duplicate group. The kept copy is highlighted; every other
+   drives you have access to. The whole Drive is scanned — not just photos.
+2. Use the category tabs (**All / Photos / Videos / PDFs / Docs / Others**)
+   to focus on one file type at a time.
+3. Review each duplicate group. The kept copy is highlighted; every other
    copy is pre-selected for deletion. Click **keep this** on any tile to
    change which copy is kept, or use the per-file checkboxes to fine-tune
-   your selection.
-3. Click **Move N files to Trash**, confirm, and watch the progress bar. You
-   can always restore files from [Drive Trash](https://drive.google.com/drive/trash)
-   until it's emptied.
+   your selection. Use the **Keep** dropdown + **Apply & select rest** to
+   switch the default rule between oldest/newest across all groups.
+4. Click **delete now** on any individual file tile to trash just that one
+   file immediately, or select multiple files and click **Move N files to
+   Trash** to delete them in bulk. Either way you'll be asked to confirm
+   first, and can restore anything from
+   [Drive Trash](https://drive.google.com/drive/trash) until it's emptied.
 
 ## Running locally
 
@@ -107,8 +124,9 @@ publishes the site with GitHub Pages on every push to `main`.
 
 The app requests the `https://www.googleapis.com/auth/drive` OAuth scope.
 This broad scope is required because the app needs to read metadata for
-existing photos (not just files it created itself) and move duplicates to
-Trash. You can revoke access at any time from your
+existing files across your whole Drive (not just files it created itself),
+resolve folder names to show file paths, and move duplicates to Trash. You
+can revoke access at any time from your
 [Google Account permissions page](https://myaccount.google.com/permissions),
 or by clicking **Sign out** in the app.
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Drive Duplicate Photo Cleaner</title>
+<title>Drive Duplicate File Cleaner</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧹</text></svg>" />
 <link rel="stylesheet" href="styles.css" />
 <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -12,7 +12,7 @@
 <header class="topbar">
   <div class="brand">
     <span class="brand-icon" aria-hidden="true">🧹</span>
-    <span class="brand-name">Drive Duplicate Photo Cleaner</span>
+    <span class="brand-name">Drive Duplicate File Cleaner</span>
   </div>
   <div class="topbar-actions">
     <button id="settingsBtn" class="btn btn-ghost" type="button">Settings</button>
@@ -24,23 +24,25 @@
 <main class="container">
 
   <section id="introCard" class="card">
-    <h1>Find and remove duplicate photos in your Google Drive</h1>
+    <h1>Find and remove duplicate files in your Google Drive</h1>
     <p>
-      This app runs entirely in your browser. It signs you in with Google, scans your Drive for
-      image files, groups exact duplicates by their content checksum, and lets you review each
-      group before doing anything. Deleted files are moved to your Drive <strong>Trash</strong> —
-      nothing is permanently deleted, so you can always restore a mistake.
+      This app runs entirely in your browser. It signs you in with Google, scans your whole
+      Drive, groups exact duplicates by their content checksum across photos, videos, PDFs, and
+      other documents, and lets you review each group before doing anything. Deleted files are
+      moved to your Drive <strong>Trash</strong> — nothing is permanently deleted, so you can
+      always restore a mistake.
     </p>
     <ol class="steps">
       <li>Click <strong>Sign in with Google</strong> and grant Drive access. (A default Client ID is
         already configured — open <strong>Settings</strong> only if you want to use your own.)</li>
-      <li>Click <strong>Scan for duplicates</strong>, review the groups, and trash the ones you don't need.</li>
+      <li>Click <strong>Scan for duplicates</strong>, filter by file type, review the groups, and
+        trash the ones you don't need — individually or in bulk.</li>
     </ol>
   </section>
 
   <section id="scanCard" class="card hidden">
     <div class="scan-controls">
-      <button id="scanBtn" class="btn btn-primary" type="button">Scan for duplicate photos</button>
+      <button id="scanBtn" class="btn btn-primary" type="button">Scan for duplicate files</button>
       <label class="checkbox-inline">
         <input type="checkbox" id="ownedOnlyChk" checked />
         Only files I own
@@ -58,6 +60,7 @@
   </section>
 
   <section id="resultsCard" class="card hidden">
+    <div id="categoryTabs" class="category-tabs"></div>
     <div class="results-summary">
       <div>
         <strong id="summaryGroups">0</strong> duplicate groups &middot;
@@ -65,7 +68,14 @@
         reclaimable: <strong id="summarySize">0 B</strong>
       </div>
       <div class="results-actions">
-        <button id="selectDefaultBtn" class="btn btn-ghost" type="button">Select duplicates (keep oldest)</button>
+        <label class="checkbox-inline">
+          Keep
+          <select id="keepRuleSelect">
+            <option value="oldest">oldest copy</option>
+            <option value="newest">newest copy</option>
+          </select>
+        </label>
+        <button id="applyKeepRuleBtn" class="btn btn-ghost" type="button">Apply &amp; select rest</button>
         <button id="deselectAllBtn" class="btn btn-ghost" type="button">Deselect all</button>
         <button id="trashSelectedBtn" class="btn btn-danger" type="button" disabled>Move 0 files to Trash</button>
       </div>
@@ -83,7 +93,7 @@
   </section>
 
   <section id="emptyCard" class="card hidden">
-    <p>No exact duplicate photos were found. Your Drive looks tidy! 🎉</p>
+    <p>No exact duplicate files were found. Your Drive looks tidy! 🎉</p>
   </section>
 
 </main>
