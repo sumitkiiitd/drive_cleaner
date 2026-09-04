@@ -35,13 +35,20 @@ detection — this is a Drive API limitation, not a setting.
 ## Timeline view
 
 Alongside the duplicate scanner, there's a **Timeline** tab (switch between
-the two once you're signed in) that loads every photo and video in your
-Drive and lays them out in a Google-Photos-style grid grouped by date
-("Today", "Yesterday", then month/year headers). Click any tile to open a
-full-size lightbox with the file's name, date, size, and folder path, and
-step through items with the on-screen arrows or your keyboard's left/right
-arrow keys (Escape closes it). This view is read-only — it's for browsing,
-not deleting; use the Duplicates tab to clean things up.
+the two once you're signed in) that lays out your photos and videos in a
+Google-Photos-style grid grouped by date ("Today", "Yesterday", then
+month/year headers). It loads lazily: only the first page of files is
+fetched up front, and more load automatically as you scroll near the
+bottom (or when you navigate past the last loaded item in the lightbox).
+Pages are requested pre-sorted by Drive itself (`createdTime desc`), so
+date ordering stays correct across page boundaries without needing to
+load everything into memory first.
+
+Click any tile to open a full-size lightbox with the file's name, date,
+size, and folder path (resolved on demand), and step through items with
+the on-screen arrows or your keyboard's left/right arrow keys (Escape
+closes it). This view is read-only — it's for browsing, not deleting; use
+the Duplicates tab to clean things up.
 
 ## For end users
 

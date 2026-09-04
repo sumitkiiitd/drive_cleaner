@@ -49,7 +49,10 @@ const state = {
   activeCategory: "all",
   folderNameCache: new Map(), // folder id -> name
   activeView: "duplicates", // "duplicates" | "timeline"
-  timelineItems: [], // flat list of photo/video files, sorted newest first
+  timelineItems: [], // flat list of photo/video files, newest first (as returned by Drive)
+  timelinePageToken: null, // next page to fetch, or null when exhausted
+  timelineLoading: false,
+  timelineQuery: null, // the `q` string used for the current timeline session
   lightboxIndex: -1, // index into timelineItems currently shown in the lightbox
 };
 
@@ -103,6 +106,8 @@ const els = {
   timelineScanError: el("timelineScanError"),
   timelineEmptyCard: el("timelineEmptyCard"),
   timelineSections: el("timelineSections"),
+  timelineSentinel: el("timelineSentinel"),
+  timelineLoadingMore: el("timelineLoadingMore"),
   lightbox: el("lightbox"),
   lightboxCloseBtn: el("lightboxCloseBtn"),
   lightboxPrevBtn: el("lightboxPrevBtn"),
@@ -199,6 +204,8 @@ function signOut() {
   closeLightbox();
   state.accessToken = null;
   state.timelineItems = [];
+  state.timelinePageToken = null;
+  state.timelineQuery = null;
   els.signInBtn.classList.remove("hidden");
   els.signOutBtn.classList.add("hidden");
   els.resultsCard.classList.add("hidden");
@@ -237,31 +244,41 @@ async function driveFetch(path, options = {}) {
   return res.json();
 }
 
-async function listAllFiles({ ownedOnly, sharedDrives, onProgress, extraQuery }) {
-  const files = [];
-  let pageToken = null;
-  const fields =
-    "nextPageToken, files(id,name,mimeType,size,md5Checksum,createdTime,modifiedTime,thumbnailLink,parents,ownedByMe)";
+const FILE_FIELDS =
+  "id,name,mimeType,size,md5Checksum,createdTime,modifiedTime,thumbnailLink,parents,ownedByMe";
+
+function buildFilesQuery({ ownedOnly, extraQuery }) {
   const qParts = ["trashed = false"];
   if (ownedOnly) qParts.push("'me' in owners");
   if (extraQuery) qParts.push(extraQuery);
-  const q = qParts.join(" and ");
+  return qParts.join(" and ");
+}
+
+async function fetchFilesPage({ q, pageToken, pageSize, sharedDrives, orderBy }) {
+  const params = new URLSearchParams({
+    q,
+    fields: `nextPageToken, files(${FILE_FIELDS})`,
+    pageSize: String(pageSize || 1000),
+    spaces: "drive",
+  });
+  if (pageToken) params.set("pageToken", pageToken);
+  if (orderBy) params.set("orderBy", orderBy);
+  if (sharedDrives) {
+    params.set("includeItemsFromAllDrives", "true");
+    params.set("supportsAllDrives", "true");
+    params.set("corpora", "allDrives");
+  }
+  return driveFetch(`${DRIVE_FILES_ENDPOINT}?${params.toString()}`);
+}
+
+async function listAllFiles({ ownedOnly, sharedDrives, onProgress, extraQuery }) {
+  const files = [];
+  let pageToken = null;
+  const q = buildFilesQuery({ ownedOnly, extraQuery });
 
   const MAX_FILES = 50000;
   do {
-    const params = new URLSearchParams({
-      q,
-      fields,
-      pageSize: "1000",
-      spaces: "drive",
-    });
-    if (pageToken) params.set("pageToken", pageToken);
-    if (sharedDrives) {
-      params.set("includeItemsFromAllDrives", "true");
-      params.set("supportsAllDrives", "true");
-      params.set("corpora", "allDrives");
-    }
-    const data = await driveFetch(`${DRIVE_FILES_ENDPOINT}?${params.toString()}`);
+    const data = await fetchFilesPage({ q, pageToken, pageSize: 1000, sharedDrives });
     files.push(...(data.files || []));
     pageToken = data.nextPageToken || null;
     onProgress?.(files.length);
@@ -425,37 +442,55 @@ function showTimelineError(message) {
   els.timelineScanError.classList.toggle("hidden", !message);
 }
 
+const TIMELINE_PAGE_SIZE = 200;
+
 async function scanTimeline() {
   showTimelineError("");
   els.timelineEmptyCard.classList.add("hidden");
   els.timelineSections.innerHTML = "";
-  els.timelineScanBtn.disabled = true;
-  els.timelineScanProgress.classList.remove("hidden");
-  els.timelineScanProgressFill.style.width = "10%";
-  els.timelineScanProgressText.textContent = "Loading photos & videos…";
+  state.timelineItems = [];
+  state.timelinePageToken = null;
+  state.timelineQuery = buildFilesQuery({
+    ownedOnly: els.timelineOwnedOnlyChk.checked,
+    extraQuery: "(mimeType contains 'image/' or mimeType contains 'video/')",
+  });
+
+  await loadMoreTimeline({ isFirstPage: true });
+}
+
+async function loadMoreTimeline({ isFirstPage = false } = {}) {
+  if (state.timelineLoading) return;
+  if (!isFirstPage && !state.timelinePageToken) return; // nothing more to load
+  state.timelineLoading = true;
+
+  if (isFirstPage) {
+    els.timelineScanBtn.disabled = true;
+    els.timelineScanProgress.classList.remove("hidden");
+    els.timelineScanProgressFill.style.width = "40%";
+    els.timelineScanProgressText.textContent = "Loading photos & videos…";
+  } else {
+    els.timelineLoadingMore.classList.remove("hidden");
+  }
 
   try {
-    const files = await listAllFiles({
-      ownedOnly: els.timelineOwnedOnlyChk.checked,
+    const data = await fetchFilesPage({
+      q: state.timelineQuery,
+      pageToken: isFirstPage ? null : state.timelinePageToken,
+      pageSize: TIMELINE_PAGE_SIZE,
       sharedDrives: false,
-      extraQuery: "(mimeType contains 'image/' or mimeType contains 'video/')",
-      onProgress: (count) => {
-        els.timelineScanProgressText.textContent = `Loaded ${count} item${count === 1 ? "" : "s"}…`;
-        els.timelineScanProgressFill.style.width = "70%";
-      },
+      orderBy: "createdTime desc",
     });
+    const newFiles = data.files || [];
+    for (const f of newFiles) f.category = categoryOf(f.mimeType);
+    state.timelineItems.push(...newFiles);
+    state.timelinePageToken = data.nextPageToken || null;
 
-    els.timelineScanProgressFill.style.width = "90%";
-    files.sort((a, b) => new Date(b.createdTime) - new Date(a.createdTime));
-    for (const f of files) f.category = categoryOf(f.mimeType);
-    state.timelineItems = files;
+    if (isFirstPage) els.timelineScanProgressFill.style.width = "100%";
 
-    els.timelineScanProgressFill.style.width = "100%";
-
-    if (files.length === 0) {
+    if (state.timelineItems.length === 0) {
       els.timelineEmptyCard.classList.remove("hidden");
     } else {
-      renderTimeline();
+      appendTimelineItems(newFiles);
     }
   } catch (err) {
     console.error(err);
@@ -469,8 +504,12 @@ async function scanTimeline() {
       showTimelineError(err.message || "Something went wrong while loading the timeline.");
     }
   } finally {
-    els.timelineScanBtn.disabled = false;
-    setTimeout(() => els.timelineScanProgress.classList.add("hidden"), 400);
+    state.timelineLoading = false;
+    els.timelineLoadingMore.classList.add("hidden");
+    if (isFirstPage) {
+      els.timelineScanBtn.disabled = false;
+      setTimeout(() => els.timelineScanProgress.classList.add("hidden"), 400);
+    }
   }
 }
 
@@ -488,74 +527,67 @@ function timelineSectionLabel(date) {
   return date.toLocaleDateString(undefined, { month: "long", year: "numeric" });
 }
 
-function groupByDate(files) {
-  const sections = [];
-  let currentLabel = null;
-  let currentItems = null;
-  for (const f of files) {
-    const date = f.createdTime ? new Date(f.createdTime) : null;
-    const label = date ? timelineSectionLabel(date) : "Unknown date";
-    if (label !== currentLabel) {
-      currentLabel = label;
-      currentItems = [];
-      sections.push({ label, items: currentItems });
-    }
-    currentItems.push(f);
+function buildTimelineTile(f) {
+  const tile = document.createElement("div");
+  tile.className = "timeline-tile";
+  tile.addEventListener("click", () => openLightbox(f.id));
+
+  if (f.thumbnailLink) {
+    const img = document.createElement("img");
+    img.alt = f.name;
+    img.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1' height='1'%3E%3C/svg%3E";
+    tile.appendChild(img);
+    loadThumb(f, img);
+  } else {
+    const placeholder = document.createElement("div");
+    placeholder.className = "file-thumb-placeholder";
+    placeholder.textContent = CATEGORY_ICONS[f.category] || "📦";
+    tile.appendChild(placeholder);
   }
-  return sections;
+
+  if (f.category === "videos") {
+    const badge = document.createElement("span");
+    badge.className = "timeline-video-badge";
+    badge.textContent = "▶";
+    tile.appendChild(badge);
+  }
+
+  return tile;
 }
 
-function renderTimeline() {
-  els.timelineSections.innerHTML = "";
-  const sections = groupByDate(state.timelineItems);
-  const thumbQueue = [];
+// Appends newly-fetched files to the existing DOM instead of rebuilding it,
+// so infinite scroll doesn't re-render (and re-request thumbnails for)
+// everything loaded so far. Since Drive returns pages pre-sorted by
+// createdTime desc, new files are always chronologically after whatever is
+// already on screen, so this only ever needs to touch the last section.
+function appendTimelineItems(newFiles) {
+  let lastLabel = els.timelineSections.lastElementChild?.dataset.label || null;
+  let lastGrid = els.timelineSections.lastElementChild?.querySelector(".timeline-grid") || null;
 
-  for (const section of sections) {
-    const wrap = document.createElement("div");
-    wrap.className = "timeline-section";
+  for (const f of newFiles) {
+    const date = f.createdTime ? new Date(f.createdTime) : null;
+    const label = date ? timelineSectionLabel(date) : "Unknown date";
 
-    const header = document.createElement("div");
-    header.className = "timeline-section-header";
-    header.textContent = section.label;
-    wrap.appendChild(header);
+    if (label !== lastLabel) {
+      const wrap = document.createElement("div");
+      wrap.className = "timeline-section";
+      wrap.dataset.label = label;
 
-    const grid = document.createElement("div");
-    grid.className = "timeline-grid";
+      const header = document.createElement("div");
+      header.className = "timeline-section-header";
+      header.textContent = label;
+      wrap.appendChild(header);
 
-    for (const f of section.items) {
-      const tile = document.createElement("div");
-      tile.className = "timeline-tile";
-      tile.addEventListener("click", () => openLightbox(f.id));
+      lastGrid = document.createElement("div");
+      lastGrid.className = "timeline-grid";
+      wrap.appendChild(lastGrid);
 
-      if (f.thumbnailLink) {
-        const img = document.createElement("img");
-        img.alt = f.name;
-        img.src =
-          "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1' height='1'%3E%3C/svg%3E";
-        tile.appendChild(img);
-        thumbQueue.push([f, img]);
-      } else {
-        const placeholder = document.createElement("div");
-        placeholder.className = "file-thumb-placeholder";
-        placeholder.textContent = CATEGORY_ICONS[f.category] || "📦";
-        tile.appendChild(placeholder);
-      }
-
-      if (f.category === "videos") {
-        const badge = document.createElement("span");
-        badge.className = "timeline-video-badge";
-        badge.textContent = "▶";
-        tile.appendChild(badge);
-      }
-
-      grid.appendChild(tile);
+      els.timelineSections.appendChild(wrap);
+      lastLabel = label;
     }
 
-    wrap.appendChild(grid);
-    els.timelineSections.appendChild(wrap);
+    lastGrid.appendChild(buildTimelineTile(f));
   }
-
-  for (const [f, imgEl] of thumbQueue) loadThumb(f, imgEl);
 }
 
 function openLightbox(fileId) {
@@ -587,10 +619,15 @@ function closeLightbox() {
   state.lightboxIndex = -1;
 }
 
-function navigateLightbox(delta) {
+async function navigateLightbox(delta) {
   if (state.lightboxIndex === -1) return;
-  const next = state.lightboxIndex + delta;
-  if (next < 0 || next >= state.timelineItems.length) return;
+  let next = state.lightboxIndex + delta;
+  if (next < 0) return;
+  if (next >= state.timelineItems.length) {
+    if (!state.timelinePageToken) return; // truly nothing more
+    await loadMoreTimeline({ isFirstPage: false });
+    if (next >= state.timelineItems.length) return; // still nothing after loading
+  }
   state.lightboxIndex = next;
   renderLightbox();
 }
@@ -640,8 +677,9 @@ function renderLightbox() {
   els.lightboxPath.textContent = f.path || "Loading path…";
   ensurePath(f);
 
+  const atLastLoaded = state.lightboxIndex >= state.timelineItems.length - 1;
   els.lightboxPrevBtn.disabled = state.lightboxIndex <= 0;
-  els.lightboxNextBtn.disabled = state.lightboxIndex >= state.timelineItems.length - 1;
+  els.lightboxNextBtn.disabled = atLastLoaded && !state.timelinePageToken;
 }
 
 function selectDefaultDuplicates(rule) {
@@ -979,6 +1017,14 @@ els.confirmDeleteBtn.addEventListener("click", trashSelected);
 els.viewTabDuplicates.addEventListener("click", () => switchView("duplicates"));
 els.viewTabTimeline.addEventListener("click", () => switchView("timeline"));
 els.timelineScanBtn.addEventListener("click", scanTimeline);
+
+const timelineObserver = new IntersectionObserver(
+  (entries) => {
+    if (entries.some((e) => e.isIntersecting)) loadMoreTimeline({ isFirstPage: false });
+  },
+  { rootMargin: "800px" }
+);
+timelineObserver.observe(els.timelineSentinel);
 els.lightboxCloseBtn.addEventListener("click", closeLightbox);
 els.lightboxPrevBtn.addEventListener("click", () => navigateLightbox(-1));
 els.lightboxNextBtn.addEventListener("click", () => navigateLightbox(1));
