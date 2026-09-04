@@ -21,6 +21,11 @@
   </div>
 </header>
 
+<nav id="viewTabs" class="view-tabs hidden">
+  <button id="viewTabDuplicates" class="view-tab active" type="button">Duplicates</button>
+  <button id="viewTabTimeline" class="view-tab" type="button">Timeline</button>
+</nav>
+
 <main class="container">
 
   <section id="introCard" class="card">
@@ -40,61 +45,86 @@
     </ol>
   </section>
 
-  <section id="scanCard" class="card hidden">
-    <div class="scan-controls">
-      <button id="scanBtn" class="btn btn-primary" type="button">Scan for duplicate files</button>
-      <label class="checkbox-inline">
-        <input type="checkbox" id="ownedOnlyChk" checked />
-        Only files I own
-      </label>
-      <label class="checkbox-inline">
-        <input type="checkbox" id="sharedDrivesChk" />
-        Include shared drives
-      </label>
-    </div>
-    <div id="scanProgress" class="progress hidden">
-      <div class="progress-bar"><div id="scanProgressFill" class="progress-fill"></div></div>
-      <p id="scanProgressText" class="muted"></p>
-    </div>
-    <p id="scanError" class="error hidden"></p>
-  </section>
-
-  <section id="resultsCard" class="card hidden">
-    <div id="categoryTabs" class="category-tabs"></div>
-    <div class="results-summary">
-      <div>
-        <strong id="summaryGroups">0</strong> duplicate groups &middot;
-        <strong id="summaryFiles">0</strong> extra copies &middot;
-        reclaimable: <strong id="summarySize">0 B</strong>
-      </div>
-      <div class="results-actions">
+  <div id="duplicatesView">
+    <section id="scanCard" class="card hidden">
+      <div class="scan-controls">
+        <button id="scanBtn" class="btn btn-primary" type="button">Scan for duplicate files</button>
         <label class="checkbox-inline">
-          Keep
-          <select id="keepRuleSelect">
-            <option value="oldest">oldest copy</option>
-            <option value="newest">newest copy</option>
-          </select>
+          <input type="checkbox" id="ownedOnlyChk" checked />
+          Only files I own
         </label>
-        <button id="applyKeepRuleBtn" class="btn btn-ghost" type="button">Apply &amp; select rest</button>
-        <button id="deselectAllBtn" class="btn btn-ghost" type="button">Deselect all</button>
-        <button id="trashSelectedBtn" class="btn btn-danger" type="button" disabled>Move 0 files to Trash</button>
+        <label class="checkbox-inline">
+          <input type="checkbox" id="sharedDrivesChk" />
+          Include shared drives
+        </label>
       </div>
-    </div>
-    <p class="muted small">
-      Files are moved to Drive Trash, not permanently deleted.
-      <a id="openTrashLink" href="https://drive.google.com/drive/trash" target="_blank" rel="noopener">Open Drive Trash</a>
-      to review or restore at any time.
-    </p>
-    <div id="deleteProgress" class="progress hidden">
-      <div class="progress-bar"><div id="deleteProgressFill" class="progress-fill"></div></div>
-      <p id="deleteProgressText" class="muted"></p>
-    </div>
-    <div id="groupsList" class="groups-list"></div>
-  </section>
+      <div id="scanProgress" class="progress hidden">
+        <div class="progress-bar"><div id="scanProgressFill" class="progress-fill"></div></div>
+        <p id="scanProgressText" class="muted"></p>
+      </div>
+      <p id="scanError" class="error hidden"></p>
+    </section>
 
-  <section id="emptyCard" class="card hidden">
-    <p>No exact duplicate files were found. Your Drive looks tidy! 🎉</p>
-  </section>
+    <section id="resultsCard" class="card hidden">
+      <div id="categoryTabs" class="category-tabs"></div>
+      <div class="results-summary">
+        <div>
+          <strong id="summaryGroups">0</strong> duplicate groups &middot;
+          <strong id="summaryFiles">0</strong> extra copies &middot;
+          reclaimable: <strong id="summarySize">0 B</strong>
+        </div>
+        <div class="results-actions">
+          <label class="checkbox-inline">
+            Keep
+            <select id="keepRuleSelect">
+              <option value="oldest">oldest copy</option>
+              <option value="newest">newest copy</option>
+            </select>
+          </label>
+          <button id="applyKeepRuleBtn" class="btn btn-ghost" type="button">Apply &amp; select rest</button>
+          <button id="deselectAllBtn" class="btn btn-ghost" type="button">Deselect all</button>
+          <button id="trashSelectedBtn" class="btn btn-danger" type="button" disabled>Move 0 files to Trash</button>
+        </div>
+      </div>
+      <p class="muted small">
+        Files are moved to Drive Trash, not permanently deleted.
+        <a id="openTrashLink" href="https://drive.google.com/drive/trash" target="_blank" rel="noopener">Open Drive Trash</a>
+        to review or restore at any time.
+      </p>
+      <div id="deleteProgress" class="progress hidden">
+        <div class="progress-bar"><div id="deleteProgressFill" class="progress-fill"></div></div>
+        <p id="deleteProgressText" class="muted"></p>
+      </div>
+      <div id="groupsList" class="groups-list"></div>
+    </section>
+
+    <section id="emptyCard" class="card hidden">
+      <p>No exact duplicate files were found. Your Drive looks tidy! 🎉</p>
+    </section>
+  </div>
+
+  <div id="timelineView" class="hidden">
+    <section id="timelineScanCard" class="card hidden">
+      <div class="scan-controls">
+        <button id="timelineScanBtn" class="btn btn-primary" type="button">Load photo &amp; video timeline</button>
+        <label class="checkbox-inline">
+          <input type="checkbox" id="timelineOwnedOnlyChk" checked />
+          Only files I own
+        </label>
+      </div>
+      <div id="timelineScanProgress" class="progress hidden">
+        <div class="progress-bar"><div id="timelineScanProgressFill" class="progress-fill"></div></div>
+        <p id="timelineScanProgressText" class="muted"></p>
+      </div>
+      <p id="timelineScanError" class="error hidden"></p>
+    </section>
+
+    <section id="timelineEmptyCard" class="card hidden">
+      <p>No photos or videos were found in your Drive.</p>
+    </section>
+
+    <div id="timelineSections"></div>
+  </div>
 
 </main>
 
@@ -125,6 +155,18 @@
       <button id="confirmCancelBtn" class="btn btn-ghost" type="button">Cancel</button>
       <button id="confirmDeleteBtn" class="btn btn-danger" type="button">Move to Trash</button>
     </div>
+  </div>
+</div>
+
+<div id="lightbox" class="lightbox hidden">
+  <button id="lightboxCloseBtn" class="lightbox-close" type="button" aria-label="Close">&times;</button>
+  <button id="lightboxPrevBtn" class="lightbox-nav lightbox-prev" type="button" aria-label="Previous">&#8249;</button>
+  <button id="lightboxNextBtn" class="lightbox-nav lightbox-next" type="button" aria-label="Next">&#8250;</button>
+  <div class="lightbox-media" id="lightboxMedia"></div>
+  <div class="lightbox-info">
+    <div id="lightboxName" class="lightbox-name"></div>
+    <div id="lightboxMeta" class="muted small"></div>
+    <div id="lightboxPath" class="muted small"></div>
   </div>
 </div>
 

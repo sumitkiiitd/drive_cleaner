@@ -48,6 +48,9 @@ const state = {
   selected: new Set(), // file ids marked for deletion
   activeCategory: "all",
   folderNameCache: new Map(), // folder id -> name
+  activeView: "duplicates", // "duplicates" | "timeline"
+  timelineItems: [], // flat list of photo/video files, sorted newest first
+  lightboxIndex: -1, // index into timelineItems currently shown in the lightbox
 };
 
 const el = (id) => document.getElementById(id);
@@ -56,6 +59,11 @@ const els = {
   settingsBtn: el("settingsBtn"),
   signInBtn: el("signInBtn"),
   signOutBtn: el("signOutBtn"),
+  viewTabs: el("viewTabs"),
+  viewTabDuplicates: el("viewTabDuplicates"),
+  viewTabTimeline: el("viewTabTimeline"),
+  duplicatesView: el("duplicatesView"),
+  timelineView: el("timelineView"),
   scanCard: el("scanCard"),
   scanBtn: el("scanBtn"),
   ownedOnlyChk: el("ownedOnlyChk"),
@@ -86,6 +94,23 @@ const els = {
   confirmText: el("confirmText"),
   confirmCancelBtn: el("confirmCancelBtn"),
   confirmDeleteBtn: el("confirmDeleteBtn"),
+  timelineScanCard: el("timelineScanCard"),
+  timelineScanBtn: el("timelineScanBtn"),
+  timelineOwnedOnlyChk: el("timelineOwnedOnlyChk"),
+  timelineScanProgress: el("timelineScanProgress"),
+  timelineScanProgressFill: el("timelineScanProgressFill"),
+  timelineScanProgressText: el("timelineScanProgressText"),
+  timelineScanError: el("timelineScanError"),
+  timelineEmptyCard: el("timelineEmptyCard"),
+  timelineSections: el("timelineSections"),
+  lightbox: el("lightbox"),
+  lightboxCloseBtn: el("lightboxCloseBtn"),
+  lightboxPrevBtn: el("lightboxPrevBtn"),
+  lightboxNextBtn: el("lightboxNextBtn"),
+  lightboxMedia: el("lightboxMedia"),
+  lightboxName: el("lightboxName"),
+  lightboxMeta: el("lightboxMeta"),
+  lightboxPath: el("lightboxPath"),
 };
 
 let pendingDeleteIds = null; // set by openConfirm; null means "use state.selected"
@@ -104,6 +129,16 @@ function formatBytes(bytes) {
 
 function updateSetupWarning() {
   els.scanCard.classList.toggle("hidden", !state.accessToken);
+  els.timelineScanCard.classList.toggle("hidden", !state.accessToken);
+  els.viewTabs.classList.toggle("hidden", !state.accessToken);
+}
+
+function switchView(view) {
+  state.activeView = view;
+  els.viewTabDuplicates.classList.toggle("active", view === "duplicates");
+  els.viewTabTimeline.classList.toggle("active", view === "timeline");
+  els.duplicatesView.classList.toggle("hidden", view !== "duplicates");
+  els.timelineView.classList.toggle("hidden", view !== "timeline");
 }
 
 function openSettings() {
@@ -161,11 +196,16 @@ function signOut() {
   if (state.accessToken && window.google?.accounts?.oauth2) {
     google.accounts.oauth2.revoke(state.accessToken, () => {});
   }
+  closeLightbox();
   state.accessToken = null;
+  state.timelineItems = [];
   els.signInBtn.classList.remove("hidden");
   els.signOutBtn.classList.add("hidden");
   els.resultsCard.classList.add("hidden");
   els.emptyCard.classList.add("hidden");
+  els.timelineSections.innerHTML = "";
+  els.timelineEmptyCard.classList.add("hidden");
+  switchView("duplicates");
   updateSetupWarning();
 }
 
@@ -197,13 +237,14 @@ async function driveFetch(path, options = {}) {
   return res.json();
 }
 
-async function listAllFiles({ ownedOnly, sharedDrives, onProgress }) {
+async function listAllFiles({ ownedOnly, sharedDrives, onProgress, extraQuery }) {
   const files = [];
   let pageToken = null;
   const fields =
     "nextPageToken, files(id,name,mimeType,size,md5Checksum,createdTime,modifiedTime,thumbnailLink,parents,ownedByMe)";
   const qParts = ["trashed = false"];
   if (ownedOnly) qParts.push("'me' in owners");
+  if (extraQuery) qParts.push(extraQuery);
   const q = qParts.join(" and ");
 
   const MAX_FILES = 50000;
@@ -377,6 +418,230 @@ async function scan() {
     els.scanBtn.disabled = false;
     setTimeout(() => els.scanProgress.classList.add("hidden"), 400);
   }
+}
+
+function showTimelineError(message) {
+  els.timelineScanError.textContent = message;
+  els.timelineScanError.classList.toggle("hidden", !message);
+}
+
+async function scanTimeline() {
+  showTimelineError("");
+  els.timelineEmptyCard.classList.add("hidden");
+  els.timelineSections.innerHTML = "";
+  els.timelineScanBtn.disabled = true;
+  els.timelineScanProgress.classList.remove("hidden");
+  els.timelineScanProgressFill.style.width = "10%";
+  els.timelineScanProgressText.textContent = "Loading photos & videos…";
+
+  try {
+    const files = await listAllFiles({
+      ownedOnly: els.timelineOwnedOnlyChk.checked,
+      sharedDrives: false,
+      extraQuery: "(mimeType contains 'image/' or mimeType contains 'video/')",
+      onProgress: (count) => {
+        els.timelineScanProgressText.textContent = `Loaded ${count} item${count === 1 ? "" : "s"}…`;
+        els.timelineScanProgressFill.style.width = "70%";
+      },
+    });
+
+    els.timelineScanProgressFill.style.width = "90%";
+    files.sort((a, b) => new Date(b.createdTime) - new Date(a.createdTime));
+    for (const f of files) f.category = categoryOf(f.mimeType);
+    state.timelineItems = files;
+
+    els.timelineScanProgressFill.style.width = "100%";
+
+    if (files.length === 0) {
+      els.timelineEmptyCard.classList.remove("hidden");
+    } else {
+      renderTimeline();
+    }
+  } catch (err) {
+    console.error(err);
+    if (err.status === 401) {
+      showTimelineError("Your session expired. Please sign in again.");
+      state.accessToken = null;
+      els.signInBtn.classList.remove("hidden");
+      els.signOutBtn.classList.add("hidden");
+      updateSetupWarning();
+    } else {
+      showTimelineError(err.message || "Something went wrong while loading the timeline.");
+    }
+  } finally {
+    els.timelineScanBtn.disabled = false;
+    setTimeout(() => els.timelineScanProgress.classList.add("hidden"), 400);
+  }
+}
+
+function timelineSectionLabel(date) {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const dayDiff = Math.round((startOfToday - startOfDay) / 86400000);
+
+  if (dayDiff === 0) return "Today";
+  if (dayDiff === 1) return "Yesterday";
+  if (date.getFullYear() === now.getFullYear()) {
+    return date.toLocaleDateString(undefined, { month: "long", day: "numeric" });
+  }
+  return date.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+}
+
+function groupByDate(files) {
+  const sections = [];
+  let currentLabel = null;
+  let currentItems = null;
+  for (const f of files) {
+    const date = f.createdTime ? new Date(f.createdTime) : null;
+    const label = date ? timelineSectionLabel(date) : "Unknown date";
+    if (label !== currentLabel) {
+      currentLabel = label;
+      currentItems = [];
+      sections.push({ label, items: currentItems });
+    }
+    currentItems.push(f);
+  }
+  return sections;
+}
+
+function renderTimeline() {
+  els.timelineSections.innerHTML = "";
+  const sections = groupByDate(state.timelineItems);
+  const thumbQueue = [];
+
+  for (const section of sections) {
+    const wrap = document.createElement("div");
+    wrap.className = "timeline-section";
+
+    const header = document.createElement("div");
+    header.className = "timeline-section-header";
+    header.textContent = section.label;
+    wrap.appendChild(header);
+
+    const grid = document.createElement("div");
+    grid.className = "timeline-grid";
+
+    for (const f of section.items) {
+      const tile = document.createElement("div");
+      tile.className = "timeline-tile";
+      tile.addEventListener("click", () => openLightbox(f.id));
+
+      if (f.thumbnailLink) {
+        const img = document.createElement("img");
+        img.alt = f.name;
+        img.src =
+          "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1' height='1'%3E%3C/svg%3E";
+        tile.appendChild(img);
+        thumbQueue.push([f, img]);
+      } else {
+        const placeholder = document.createElement("div");
+        placeholder.className = "file-thumb-placeholder";
+        placeholder.textContent = CATEGORY_ICONS[f.category] || "📦";
+        tile.appendChild(placeholder);
+      }
+
+      if (f.category === "videos") {
+        const badge = document.createElement("span");
+        badge.className = "timeline-video-badge";
+        badge.textContent = "▶";
+        tile.appendChild(badge);
+      }
+
+      grid.appendChild(tile);
+    }
+
+    wrap.appendChild(grid);
+    els.timelineSections.appendChild(wrap);
+  }
+
+  for (const [f, imgEl] of thumbQueue) loadThumb(f, imgEl);
+}
+
+function openLightbox(fileId) {
+  const index = state.timelineItems.findIndex((f) => f.id === fileId);
+  if (index === -1) return;
+  state.lightboxIndex = index;
+  renderLightbox();
+  els.lightbox.classList.remove("hidden");
+}
+
+async function ensurePath(file) {
+  if (file.path) return;
+  file.path = await resolvePath(file.parents);
+  // Only refresh the label if we're still looking at this same file.
+  if (state.timelineItems[state.lightboxIndex] === file) {
+    els.lightboxPath.textContent = file.path || "";
+  }
+}
+
+let lightboxVideoUrl = null;
+
+function closeLightbox() {
+  els.lightbox.classList.add("hidden");
+  els.lightboxMedia.innerHTML = "";
+  if (lightboxVideoUrl) {
+    URL.revokeObjectURL(lightboxVideoUrl);
+    lightboxVideoUrl = null;
+  }
+  state.lightboxIndex = -1;
+}
+
+function navigateLightbox(delta) {
+  if (state.lightboxIndex === -1) return;
+  const next = state.lightboxIndex + delta;
+  if (next < 0 || next >= state.timelineItems.length) return;
+  state.lightboxIndex = next;
+  renderLightbox();
+}
+
+async function loadLightboxVideo(file, videoEl) {
+  try {
+    const res = await fetch(`${DRIVE_FILES_ENDPOINT}/${file.id}?alt=media`, {
+      headers: { Authorization: `Bearer ${state.accessToken}` },
+    });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    // Only apply if the lightbox is still showing this same file.
+    if (state.timelineItems[state.lightboxIndex] !== file) return;
+    if (lightboxVideoUrl) URL.revokeObjectURL(lightboxVideoUrl);
+    lightboxVideoUrl = URL.createObjectURL(blob);
+    videoEl.src = lightboxVideoUrl;
+  } catch (_) {
+    /* best-effort */
+  }
+}
+
+function renderLightbox() {
+  const f = state.timelineItems[state.lightboxIndex];
+  if (!f) return;
+
+  els.lightboxMedia.innerHTML = "";
+  if (lightboxVideoUrl) {
+    URL.revokeObjectURL(lightboxVideoUrl);
+    lightboxVideoUrl = null;
+  }
+  if (f.category === "videos") {
+    const video = document.createElement("video");
+    video.controls = true;
+    video.autoplay = false;
+    els.lightboxMedia.appendChild(video);
+    loadLightboxVideo(f, video);
+  } else {
+    const img = document.createElement("img");
+    img.alt = f.name;
+    img.src = f.thumbnailLink ? f.thumbnailLink.replace(/=s\d+$/, "=s1600") : "";
+    els.lightboxMedia.appendChild(img);
+  }
+
+  els.lightboxName.textContent = f.name;
+  const date = f.createdTime ? new Date(f.createdTime).toLocaleString() : "";
+  els.lightboxMeta.textContent = `${formatBytes(Number(f.size || 0))} · ${date}`;
+  els.lightboxPath.textContent = f.path || "Loading path…";
+  ensurePath(f);
+
+  els.lightboxPrevBtn.disabled = state.lightboxIndex <= 0;
+  els.lightboxNextBtn.disabled = state.lightboxIndex >= state.timelineItems.length - 1;
 }
 
 function selectDefaultDuplicates(rule) {
@@ -710,6 +975,22 @@ els.deselectAllBtn.addEventListener("click", deselectAll);
 els.trashSelectedBtn.addEventListener("click", openConfirm);
 els.confirmCancelBtn.addEventListener("click", closeConfirm);
 els.confirmDeleteBtn.addEventListener("click", trashSelected);
+
+els.viewTabDuplicates.addEventListener("click", () => switchView("duplicates"));
+els.viewTabTimeline.addEventListener("click", () => switchView("timeline"));
+els.timelineScanBtn.addEventListener("click", scanTimeline);
+els.lightboxCloseBtn.addEventListener("click", closeLightbox);
+els.lightboxPrevBtn.addEventListener("click", () => navigateLightbox(-1));
+els.lightboxNextBtn.addEventListener("click", () => navigateLightbox(1));
+els.lightbox.addEventListener("click", (e) => {
+  if (e.target === els.lightbox) closeLightbox();
+});
+window.addEventListener("keydown", (e) => {
+  if (els.lightbox.classList.contains("hidden")) return;
+  if (e.key === "Escape") closeLightbox();
+  else if (e.key === "ArrowLeft") navigateLightbox(-1);
+  else if (e.key === "ArrowRight") navigateLightbox(1);
+});
 
 window.addEventListener("load", () => {
   updateSetupWarning();

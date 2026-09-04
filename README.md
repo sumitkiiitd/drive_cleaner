@@ -32,6 +32,17 @@ Native Google Docs, Sheets, and Slides don't have a content checksum (they
 aren't stored as flat files), so they're not included in duplicate
 detection — this is a Drive API limitation, not a setting.
 
+## Timeline view
+
+Alongside the duplicate scanner, there's a **Timeline** tab (switch between
+the two once you're signed in) that loads every photo and video in your
+Drive and lays them out in a Google-Photos-style grid grouped by date
+("Today", "Yesterday", then month/year headers). Click any tile to open a
+full-size lightbox with the file's name, date, size, and folder path, and
+step through items with the on-screen arrows or your keyboard's left/right
+arrow keys (Escape closes it). This view is read-only — it's for browsing,
+not deleting; use the Duplicates tab to clean things up.
+
 ## For end users
 
 Just open the deployed app and click **Sign in with Google** — a default
