@@ -7,11 +7,10 @@
  */
 
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
-const STORAGE_KEY_CLIENT_ID = "ddpc.clientId";
 const DRIVE_FILES_ENDPOINT = "https://www.googleapis.com/drive/v3/files";
+const GOOGLE_CLIENT_ID = "432225616356-ib3amsha9j04d87kmolbg2j3vkjj2v6u.apps.googleusercontent.com";
 
 const state = {
-  clientId: localStorage.getItem(STORAGE_KEY_CLIENT_ID) || "",
   accessToken: null,
   tokenClient: null,
   groups: [], // [{ checksum, files: [{id,name,size,createdTime,thumbnailLink,mimeType}], keepId }]
@@ -22,10 +21,8 @@ const state = {
 const el = (id) => document.getElementById(id);
 
 const els = {
-  settingsBtn: el("settingsBtn"),
   signInBtn: el("signInBtn"),
   signOutBtn: el("signOutBtn"),
-  setupWarning: el("setupWarning"),
   scanCard: el("scanCard"),
   scanBtn: el("scanBtn"),
   ownedOnlyChk: el("ownedOnlyChk"),
@@ -46,10 +43,6 @@ const els = {
   deleteProgressText: el("deleteProgressText"),
   groupsList: el("groupsList"),
   emptyCard: el("emptyCard"),
-  settingsModal: el("settingsModal"),
-  clientIdInput: el("clientIdInput"),
-  settingsCancelBtn: el("settingsCancelBtn"),
-  settingsSaveBtn: el("settingsSaveBtn"),
   confirmModal: el("confirmModal"),
   confirmText: el("confirmText"),
   confirmCancelBtn: el("confirmCancelBtn"),
@@ -69,31 +62,13 @@ function formatBytes(bytes) {
 }
 
 function updateSetupWarning() {
-  els.setupWarning.classList.toggle("hidden", !!state.clientId);
   els.scanCard.classList.toggle("hidden", !state.accessToken);
 }
 
-function openSettings() {
-  els.clientIdInput.value = state.clientId;
-  els.settingsModal.classList.remove("hidden");
-}
-
-function closeSettings() {
-  els.settingsModal.classList.add("hidden");
-}
-
-function saveSettings() {
-  state.clientId = els.clientIdInput.value.trim();
-  localStorage.setItem(STORAGE_KEY_CLIENT_ID, state.clientId);
-  closeSettings();
-  updateSetupWarning();
-  initTokenClientIfNeeded();
-}
-
 function initTokenClientIfNeeded() {
-  if (!state.clientId || !window.google || !google.accounts || state.tokenClient) return;
+  if (!window.google || !google.accounts || state.tokenClient) return;
   state.tokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: state.clientId,
+    client_id: GOOGLE_CLIENT_ID,
     scope: DRIVE_SCOPE,
     callback: (resp) => {
       if (resp.error) {
@@ -109,10 +84,6 @@ function initTokenClientIfNeeded() {
 }
 
 function signIn() {
-  if (!state.clientId) {
-    openSettings();
-    return;
-  }
   initTokenClientIfNeeded();
   if (!state.tokenClient) {
     showScanError("Google sign-in library hasn't loaded yet. Please try again in a moment.");
@@ -531,9 +502,6 @@ async function trashSelected() {
 }
 
 // Wire up events.
-els.settingsBtn.addEventListener("click", openSettings);
-els.settingsCancelBtn.addEventListener("click", closeSettings);
-els.settingsSaveBtn.addEventListener("click", saveSettings);
 els.signInBtn.addEventListener("click", signIn);
 els.signOutBtn.addEventListener("click", signOut);
 els.scanBtn.addEventListener("click", scan);

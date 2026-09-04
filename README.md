@@ -20,11 +20,18 @@ positives from similar-but-different photos. Within each group, the oldest
 file (by creation time) is kept by default; you can change which copy to
 keep, or which copies to delete, before doing anything.
 
-## 1. Create a Google OAuth Client ID (one-time setup)
+## For end users
 
-You need your own OAuth Client ID so the app can ask Google, on your behalf,
-for permission to read and manage your Drive files. This is free and takes a
-few minutes.
+Just open the deployed app and click **Sign in with Google** — no setup
+needed. The app already has a registered Google OAuth Client ID baked in.
+
+## 1. Create a Google OAuth Client ID (one-time developer setup)
+
+If you're deploying your own copy of this app, you need your own OAuth
+Client ID so the app can ask Google, on your users' behalf, for permission to
+read and manage their Drive files. This is free and takes a few minutes, and
+only needs to be done once by whoever deploys the app — end users never see
+or configure this.
 
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and
    create a new project (or pick an existing one).
@@ -50,11 +57,11 @@ few minutes.
 
 ## 2. Configure the app
 
-1. Open the deployed app (or `index.html` locally).
-2. Click **Settings** and paste in your Client ID. It's stored only in your
-   browser's `localStorage` — it is never sent anywhere except directly to
-   Google.
-3. Click **Sign in with Google** and grant Drive access.
+1. Open `app.js` and set `GOOGLE_CLIENT_ID` to the Client ID you created
+   above.
+2. Deploy (or open `index.html` locally). Users just click
+   **Sign in with Google** and grant Drive access — nothing else to
+   configure.
 
 ## 3. Scan and clean up
 

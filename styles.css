@@ -220,15 +220,6 @@ h2 { margin-top: 0; }
   max-width: 420px;
   width: 100%;
 }
-.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
-.field input {
-  padding: 8px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text);
-  font-size: 0.9rem;
-}
 .modal-actions {
   display: flex;
   justify-content: flex-end;
