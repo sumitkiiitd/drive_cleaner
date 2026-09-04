@@ -246,7 +246,7 @@ async function driveFetch(path, options = {}) {
 
 const FILE_FIELDS =
   "id,name,mimeType,size,md5Checksum,createdTime,modifiedTime,thumbnailLink,parents,ownedByMe," +
-  "imageMediaMetadata/time,videoMediaMetadata/time";
+  "imageMediaMetadata(time),videoMediaMetadata(time)";
 
 // Prefer the EXIF/media capture time (when the file itself was actually
 // photographed/recorded) over Drive's createdTime (when it was uploaded) —
