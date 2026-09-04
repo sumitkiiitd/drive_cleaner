@@ -22,8 +22,11 @@ keep, or which copies to delete, before doing anything.
 
 ## For end users
 
-Just open the deployed app and click **Sign in with Google** — no setup
-needed. The app already has a registered Google OAuth Client ID baked in.
+Just open the deployed app and click **Sign in with Google** — a default
+Client ID is already configured. If you'd rather use your own OAuth Client
+ID (e.g. so Drive access runs under your own Google Cloud project), open
+**Settings** and paste it in; it's stored only in your browser's
+`localStorage`.
 
 ## 1. Create a Google OAuth Client ID (one-time developer setup)
 
@@ -57,11 +60,11 @@ or configure this.
 
 ## 2. Configure the app
 
-1. Open `app.js` and set `GOOGLE_CLIENT_ID` to the Client ID you created
+1. Open `app.js` and set `DEFAULT_CLIENT_ID` to the Client ID you created
    above.
 2. Deploy (or open `index.html` locally). Users just click
-   **Sign in with Google** and grant Drive access — nothing else to
-   configure.
+   **Sign in with Google** and grant Drive access, or open **Settings** to
+   override the Client ID with their own.
 
 ## 3. Scan and clean up
 

@@ -15,6 +15,7 @@
     <span class="brand-name">Drive Duplicate Photo Cleaner</span>
   </div>
   <div class="topbar-actions">
+    <button id="settingsBtn" class="btn btn-ghost" type="button">Settings</button>
     <button id="signInBtn" class="btn btn-primary" type="button">Sign in with Google</button>
     <button id="signOutBtn" class="btn btn-ghost hidden" type="button">Sign out</button>
   </div>
@@ -31,7 +32,8 @@
       nothing is permanently deleted, so you can always restore a mistake.
     </p>
     <ol class="steps">
-      <li>Click <strong>Sign in with Google</strong> and grant Drive access.</li>
+      <li>Click <strong>Sign in with Google</strong> and grant Drive access. (A default Client ID is
+        already configured — open <strong>Settings</strong> only if you want to use your own.)</li>
       <li>Click <strong>Scan for duplicates</strong>, review the groups, and trash the ones you don't need.</li>
     </ol>
   </section>
@@ -85,6 +87,24 @@
   </section>
 
 </main>
+
+<div id="settingsModal" class="modal hidden">
+  <div class="modal-content">
+    <h2>Settings</h2>
+    <label class="field">
+      <span>Google OAuth Client ID</span>
+      <input id="clientIdInput" type="text" placeholder="xxxxxxxxxx.apps.googleusercontent.com" />
+    </label>
+    <p class="muted small">
+      Stored only in this browser's local storage. Never sent anywhere except directly to Google.
+      Leave blank to use the app's default Client ID.
+    </p>
+    <div class="modal-actions">
+      <button id="settingsCancelBtn" class="btn btn-ghost" type="button">Cancel</button>
+      <button id="settingsSaveBtn" class="btn btn-primary" type="button">Save</button>
+    </div>
+  </div>
+</div>
 
 <div id="confirmModal" class="modal hidden">
   <div class="modal-content">
