@@ -17,7 +17,6 @@ const state = {
   tokenClient: null,
   groups: [], // [{ checksum, files: [{id,name,size,createdTime,thumbnailLink,mimeType}], keepId }]
   selected: new Set(), // file ids marked for deletion
-  thumbCache: new Map(), // fileId -> object URL
 };
 
 const el = (id) => document.getElementById(id);
@@ -240,8 +239,6 @@ async function scan() {
     const { groups, skippedNoChecksum } = groupDuplicates(files);
     state.groups = groups;
     state.selected = new Set();
-    state.thumbCache.forEach((url) => URL.revokeObjectURL(url));
-    state.thumbCache.clear();
 
     els.scanProgressFill.style.width = "100%";
 
@@ -317,24 +314,13 @@ function updateSummary() {
   els.trashSelectedBtn.disabled = count === 0;
 }
 
-async function loadThumb(file, imgEl) {
+function loadThumb(file, imgEl) {
   if (!file.thumbnailLink) return;
-  if (state.thumbCache.has(file.id)) {
-    imgEl.src = state.thumbCache.get(file.id);
-    return;
-  }
-  try {
-    const res = await fetch(file.thumbnailLink, {
-      headers: { Authorization: `Bearer ${state.accessToken}` },
-    });
-    if (!res.ok) return;
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    state.thumbCache.set(file.id, url);
-    imgEl.src = url;
-  } catch (_) {
-    /* thumbnail is best-effort */
-  }
+  // thumbnailLink is served from lh3.googleusercontent.com without CORS
+  // headers, so it can't be fetch()'d with an Authorization header. Loading
+  // it directly as an <img> avoids the CORS preflight and works using the
+  // signed URL Drive already returned.
+  imgEl.src = file.thumbnailLink;
 }
 
 function renderGroups() {
@@ -431,17 +417,7 @@ function renderGroups() {
 
   updateSummary();
 
-  // Load thumbnails with limited concurrency so we don't fire hundreds of
-  // requests at once.
-  let idx = 0;
-  const CONCURRENCY = 6;
-  const worker = async () => {
-    while (idx < thumbQueue.length) {
-      const [f, imgEl] = thumbQueue[idx++];
-      await loadThumb(f, imgEl);
-    }
-  };
-  for (let i = 0; i < CONCURRENCY; i++) worker();
+  for (const [f, imgEl] of thumbQueue) loadThumb(f, imgEl);
 }
 
 function escapeHtml(str) {
