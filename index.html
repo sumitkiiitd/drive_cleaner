@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Drive Duplicate Photo Cleaner</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧹</text></svg>" />
+<link rel="stylesheet" href="styles.css" />
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-icon" aria-hidden="true">🧹</span>
+    <span class="brand-name">Drive Duplicate Photo Cleaner</span>
+  </div>
+  <div class="topbar-actions">
+    <button id="settingsBtn" class="btn btn-ghost" type="button">Settings</button>
+    <button id="signInBtn" class="btn btn-primary" type="button">Sign in with Google</button>
+    <button id="signOutBtn" class="btn btn-ghost hidden" type="button">Sign out</button>
+  </div>
+</header>
+
+<main class="container">
+
+  <section id="introCard" class="card">
+    <h1>Find and remove duplicate photos in your Google Drive</h1>
+    <p>
+      This app runs entirely in your browser. It signs you in with Google, scans your Drive for
+      image files, groups exact duplicates by their content checksum, and lets you review each
+      group before doing anything. Deleted files are moved to your Drive <strong>Trash</strong> —
+      nothing is permanently deleted, so you can always restore a mistake.
+    </p>
+    <ol class="steps">
+      <li>Open <strong>Settings</strong> and paste in your own Google OAuth Client ID (one-time setup, see README).</li>
+      <li>Click <strong>Sign in with Google</strong> and grant Drive access.</li>
+      <li>Click <strong>Scan for duplicates</strong>, review the groups, and trash the ones you don't need.</li>
+    </ol>
+  </section>
+
+  <section id="setupWarning" class="card warning hidden">
+    <p>
+      No Google OAuth Client ID is configured yet. Open <strong>Settings</strong> to add one.
+      See the project README for step-by-step instructions on creating a free Client ID in
+      Google Cloud Console.
+    </p>
+  </section>
+
+  <section id="scanCard" class="card hidden">
+    <div class="scan-controls">
+      <button id="scanBtn" class="btn btn-primary" type="button">Scan for duplicate photos</button>
+      <label class="checkbox-inline">
+        <input type="checkbox" id="ownedOnlyChk" checked />
+        Only files I own
+      </label>
+      <label class="checkbox-inline">
+        <input type="checkbox" id="sharedDrivesChk" />
+        Include shared drives
+      </label>
+    </div>
+    <div id="scanProgress" class="progress hidden">
+      <div class="progress-bar"><div id="scanProgressFill" class="progress-fill"></div></div>
+      <p id="scanProgressText" class="muted"></p>
+    </div>
+    <p id="scanError" class="error hidden"></p>
+  </section>
+
+  <section id="resultsCard" class="card hidden">
+    <div class="results-summary">
+      <div>
+        <strong id="summaryGroups">0</strong> duplicate groups &middot;
+        <strong id="summaryFiles">0</strong> extra copies &middot;
+        reclaimable: <strong id="summarySize">0 B</strong>
+      </div>
+      <div class="results-actions">
+        <button id="selectDefaultBtn" class="btn btn-ghost" type="button">Select duplicates (keep oldest)</button>
+        <button id="deselectAllBtn" class="btn btn-ghost" type="button">Deselect all</button>
+        <button id="trashSelectedBtn" class="btn btn-danger" type="button" disabled>Move 0 files to Trash</button>
+      </div>
+    </div>
+    <p class="muted small">
+      Files are moved to Drive Trash, not permanently deleted.
+      <a id="openTrashLink" href="https://drive.google.com/drive/trash" target="_blank" rel="noopener">Open Drive Trash</a>
+      to review or restore at any time.
+    </p>
+    <div id="deleteProgress" class="progress hidden">
+      <div class="progress-bar"><div id="deleteProgressFill" class="progress-fill"></div></div>
+      <p id="deleteProgressText" class="muted"></p>
+    </div>
+    <div id="groupsList" class="groups-list"></div>
+  </section>
+
+  <section id="emptyCard" class="card hidden">
+    <p>No exact duplicate photos were found. Your Drive looks tidy! 🎉</p>
+  </section>
+
+</main>
+
+<div id="settingsModal" class="modal hidden">
+  <div class="modal-content">
+    <h2>Settings</h2>
+    <label class="field">
+      <span>Google OAuth Client ID</span>
+      <input id="clientIdInput" type="text" placeholder="xxxxxxxxxx.apps.googleusercontent.com" />
+    </label>
+    <p class="muted small">
+      Stored only in this browser's local storage. Never sent anywhere except directly to Google.
+      See the README for how to create one.
+    </p>
+    <div class="modal-actions">
+      <button id="settingsCancelBtn" class="btn btn-ghost" type="button">Cancel</button>
+      <button id="settingsSaveBtn" class="btn btn-primary" type="button">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="confirmModal" class="modal hidden">
+  <div class="modal-content">
+    <h2>Move files to Trash?</h2>
+    <p id="confirmText"></p>
+    <p class="muted small">This moves the selected files to your Google Drive Trash. You can restore them from there at any time until it is emptied.</p>
+    <div class="modal-actions">
+      <button id="confirmCancelBtn" class="btn btn-ghost" type="button">Cancel</button>
+      <button id="confirmDeleteBtn" class="btn btn-danger" type="button">Move to Trash</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
