@@ -37,12 +37,19 @@ detection — this is a Drive API limitation, not a setting.
 Alongside the duplicate scanner, there's a **Timeline** tab (switch between
 the two once you're signed in) that lays out your photos and videos in a
 Google-Photos-style grid grouped by date ("Today", "Yesterday", then
-month/year headers). It loads lazily: only the first page of files is
-fetched up front, and more load automatically as you scroll near the
-bottom (or when you navigate past the last loaded item in the lightbox).
-Pages are requested pre-sorted by Drive itself (`createdTime desc`), so
-date ordering stays correct across page boundaries without needing to
-load everything into memory first.
+month/year headers). Grouping uses each photo's actual capture time (EXIF
+`imageMediaMetadata.time`, or `videoMediaMetadata.time` for videos) rather
+than when it was uploaded to Drive, so imported photos land in the right
+date section. Files without capture metadata (screenshots, some downloads)
+fall back to Drive's upload time.
+
+It loads lazily: only the first page of files is fetched up front, and more
+load automatically as you scroll near the bottom (or when you navigate past
+the last loaded item in the lightbox). Pages are requested from Drive
+sorted by upload time (Drive can't sort server-side by capture time), and
+each loaded batch is then re-sorted by capture time before display — so
+ordering is exactly correct within what's loaded, and follows upload order
+across page boundaries.
 
 Click any tile to open a full-size lightbox with the file's name, date,
 size, and folder path (resolved on demand), and step through items with

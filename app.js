@@ -245,7 +245,23 @@ async function driveFetch(path, options = {}) {
 }
 
 const FILE_FIELDS =
-  "id,name,mimeType,size,md5Checksum,createdTime,modifiedTime,thumbnailLink,parents,ownedByMe";
+  "id,name,mimeType,size,md5Checksum,createdTime,modifiedTime,thumbnailLink,parents,ownedByMe," +
+  "imageMediaMetadata/time,videoMediaMetadata/time";
+
+// Prefer the EXIF/media capture time (when the file itself was actually
+// photographed/recorded) over Drive's createdTime (when it was uploaded) —
+// these often differ for photos imported after the fact. Falls back to
+// createdTime when no capture time is present (screenshots, downloads,
+// files missing EXIF, etc).
+function captureTime(file) {
+  const raw = file.imageMediaMetadata?.time || file.videoMediaMetadata?.time || file.createdTime;
+  if (!raw) return null;
+  // imageMediaMetadata.time is "YYYY:MM:DD HH:MM:SS" (EXIF format, no
+  // timezone) rather than ISO 8601, so normalize it before parsing.
+  const normalized = /^\d{4}:\d{2}:\d{2}/.test(raw) ? raw.replace(/^(\d{4}):(\d{2}):(\d{2})/, "$1-$2-$3") : raw;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
 
 function buildFilesQuery({ ownedOnly, extraQuery }) {
   const qParts = ["trashed = false"];
@@ -557,15 +573,19 @@ function buildTimelineTile(f) {
 
 // Appends newly-fetched files to the existing DOM instead of rebuilding it,
 // so infinite scroll doesn't re-render (and re-request thumbnails for)
-// everything loaded so far. Since Drive returns pages pre-sorted by
-// createdTime desc, new files are always chronologically after whatever is
-// already on screen, so this only ever needs to touch the last section.
+// everything loaded so far. Drive paginates by createdTime (upload time),
+// not capture time, so a batch is re-sorted by capture time before display
+// — this keeps each loaded page internally in true chronological order even
+// though capture time and upload time can differ (e.g. importing an old
+// photo). Ordering across page boundaries still follows upload time.
 function appendTimelineItems(newFiles) {
+  const sorted = [...newFiles].sort((a, b) => (captureTime(b) || 0) - (captureTime(a) || 0));
+
   let lastLabel = els.timelineSections.lastElementChild?.dataset.label || null;
   let lastGrid = els.timelineSections.lastElementChild?.querySelector(".timeline-grid") || null;
 
-  for (const f of newFiles) {
-    const date = f.createdTime ? new Date(f.createdTime) : null;
+  for (const f of sorted) {
+    const date = captureTime(f);
     const label = date ? timelineSectionLabel(date) : "Unknown date";
 
     if (label !== lastLabel) {
@@ -672,7 +692,7 @@ function renderLightbox() {
   }
 
   els.lightboxName.textContent = f.name;
-  const date = f.createdTime ? new Date(f.createdTime).toLocaleString() : "";
+  const date = captureTime(f)?.toLocaleString() || "";
   els.lightboxMeta.textContent = `${formatBytes(Number(f.size || 0))} · ${date}`;
   els.lightboxPath.textContent = f.path || "Loading path…";
   ensurePath(f);
