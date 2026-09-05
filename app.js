@@ -53,6 +53,7 @@ const state = {
   timelineRenderedCount: 0, // how many of timelineItems have been appended to the DOM so far
   timelineLoading: false,
   lightboxIndex: -1, // index into timelineItems currently shown in the lightbox
+  timelineSelected: new Set(), // file ids selected in the Timeline grid
 };
 
 const el = (id) => document.getElementById(id);
@@ -106,6 +107,11 @@ const els = {
   timelineEmptyCard: el("timelineEmptyCard"),
   timelineSections: el("timelineSections"),
   timelineSentinel: el("timelineSentinel"),
+  timelineToolbar: el("timelineToolbar"),
+  timelineSelectedCount: el("timelineSelectedCount"),
+  timelineDownloadSelectedBtn: el("timelineDownloadSelectedBtn"),
+  timelineDeleteSelectedBtn: el("timelineDeleteSelectedBtn"),
+  timelineClearSelectionBtn: el("timelineClearSelectionBtn"),
   lightbox: el("lightbox"),
   lightboxCloseBtn: el("lightboxCloseBtn"),
   lightboxPrevBtn: el("lightboxPrevBtn"),
@@ -114,9 +120,12 @@ const els = {
   lightboxName: el("lightboxName"),
   lightboxMeta: el("lightboxMeta"),
   lightboxPath: el("lightboxPath"),
+  lightboxDownloadBtn: el("lightboxDownloadBtn"),
+  lightboxDeleteBtn: el("lightboxDeleteBtn"),
 };
 
 let pendingDeleteIds = null; // set by openConfirm; null means "use state.selected"
+let pendingDeleteSource = "duplicates"; // "duplicates" | "duplicates-single" | "timeline"
 
 function formatBytes(bytes) {
   if (!bytes || bytes <= 0) return "0 B";
@@ -203,12 +212,14 @@ function signOut() {
   state.accessToken = null;
   state.timelineItems = [];
   state.timelineRenderedCount = 0;
+  state.timelineSelected.clear();
   els.signInBtn.classList.remove("hidden");
   els.signOutBtn.classList.add("hidden");
   els.resultsCard.classList.add("hidden");
   els.emptyCard.classList.add("hidden");
   els.timelineSections.innerHTML = "";
   els.timelineEmptyCard.classList.add("hidden");
+  updateTimelineToolbar();
   switchView("duplicates");
   updateSetupWarning();
 }
@@ -464,6 +475,8 @@ async function scanTimeline() {
   els.timelineSections.innerHTML = "";
   state.timelineItems = [];
   state.timelineRenderedCount = 0;
+  state.timelineSelected.clear();
+  updateTimelineToolbar();
   els.timelineScanBtn.disabled = true;
   els.timelineScanProgress.classList.remove("hidden");
   els.timelineScanProgressFill.style.width = "5%";
@@ -553,6 +566,7 @@ function timelineSectionLabel(date) {
 function buildTimelineTile(f) {
   const tile = document.createElement("div");
   tile.className = "timeline-tile";
+  tile.dataset.fileId = f.id;
   tile.addEventListener("click", () => openLightbox(f.id));
 
   if (f.thumbnailLink) {
@@ -574,6 +588,24 @@ function buildTimelineTile(f) {
     badge.textContent = "▶";
     tile.appendChild(badge);
   }
+
+  const checkLabel = document.createElement("label");
+  checkLabel.className = "timeline-select";
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.checked = state.timelineSelected.has(f.id);
+  cb.addEventListener("click", (e) => {
+    e.stopPropagation(); // don't open the lightbox
+    if (cb.checked) state.timelineSelected.add(f.id);
+    else state.timelineSelected.delete(f.id);
+    tile.classList.toggle("selected", cb.checked);
+    updateTimelineToolbar();
+  });
+  checkLabel.appendChild(cb);
+  checkLabel.addEventListener("click", (e) => e.stopPropagation());
+  tile.appendChild(checkLabel);
+
+  if (state.timelineSelected.has(f.id)) tile.classList.add("selected");
 
   return tile;
 }
@@ -666,6 +698,36 @@ async function loadLightboxVideo(file, videoEl) {
     videoEl.src = lightboxVideoUrl;
   } catch (_) {
     /* best-effort */
+  }
+}
+
+// Downloads the file's original bytes (full quality/resolution, not the
+// resized thumbnailLink preview) by fetching Drive's alt=media endpoint
+// with the OAuth header, then handing the browser a blob: URL to save.
+async function downloadFile(file) {
+  try {
+    const res = await fetch(`${DRIVE_FILES_ENDPOINT}/${file.id}?alt=media`, {
+      headers: { Authorization: `Bearer ${state.accessToken}` },
+    });
+    if (!res.ok) throw new Error(`Download failed (${res.status})`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = file.name || "download";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  } catch (err) {
+    console.error(`Failed to download ${file.id}`, err);
+    showTimelineError(`Failed to download "${file.name}": ${err.message}`);
+  }
+}
+
+async function downloadFiles(files) {
+  for (const f of files) {
+    await downloadFile(f);
   }
 }
 
@@ -796,6 +858,7 @@ const CATEGORY_ICONS = {
 
 function deleteSingleFile(fileId) {
   pendingDeleteIds = [fileId];
+  pendingDeleteSource = "duplicates-single";
   const size = formatBytes(totalSizeForIds(pendingDeleteIds));
   els.confirmText.textContent = `This will move 1 file (${size}) to your Google Drive Trash.`;
   els.confirmModal.classList.remove("hidden");
@@ -931,6 +994,7 @@ function escapeHtml(str) {
 
 function openConfirm() {
   pendingDeleteIds = null;
+  pendingDeleteSource = "duplicates";
   const visibleIds = new Set(visibleGroups().flatMap((g) => g.files.map((f) => f.id)));
   const idsToDelete = Array.from(state.selected).filter((id) => visibleIds.has(id));
   const count = idsToDelete.length;
@@ -944,27 +1008,14 @@ function closeConfirm() {
   els.confirmModal.classList.add("hidden");
 }
 
-async function trashSelected() {
-  const visibleIds = new Set(visibleGroups().flatMap((g) => g.files.map((f) => f.id)));
-  const ids = pendingDeleteIds || Array.from(state.selected).filter((id) => visibleIds.has(id));
-  closeConfirm();
-  if (ids.length === 0) return;
-
-  els.trashSelectedBtn.disabled = true;
-  els.deleteProgress.classList.remove("hidden");
-  els.deleteProgressFill.style.width = "0%";
-
+// Shared Drive-trash loop used by both the Duplicates tab and the Timeline
+// tab. Returns the set of file ids that were successfully trashed.
+async function trashFileIds(ids, onProgress) {
   let done = 0;
   let failed = 0;
   const CONCURRENCY = 5;
   let idx = 0;
   const succeededIds = new Set();
-
-  const updateProgress = () => {
-    const pct = Math.round(((done + failed) / ids.length) * 100);
-    els.deleteProgressFill.style.width = `${pct}%`;
-    els.deleteProgressText.textContent = `Trashed ${done}/${ids.length}${failed ? `, ${failed} failed` : ""}…`;
-  };
 
   const worker = async () => {
     while (idx < ids.length) {
@@ -981,13 +1032,35 @@ async function trashSelected() {
         console.error(`Failed to trash ${fileId}`, err);
         failed++;
       }
-      updateProgress();
+      onProgress?.(done, failed, ids.length);
     }
   };
 
   const workers = [];
   for (let i = 0; i < CONCURRENCY; i++) workers.push(worker());
   await Promise.all(workers);
+
+  return { succeededIds, done, failed };
+}
+
+async function trashSelected() {
+  const source = pendingDeleteSource;
+  const visibleIds = new Set(visibleGroups().flatMap((g) => g.files.map((f) => f.id)));
+  const ids = pendingDeleteIds || Array.from(state.selected).filter((id) => visibleIds.has(id));
+  closeConfirm();
+  if (ids.length === 0) return;
+
+  if (source === "timeline") return trashTimelineFiles(ids);
+
+  els.trashSelectedBtn.disabled = true;
+  els.deleteProgress.classList.remove("hidden");
+  els.deleteProgressFill.style.width = "0%";
+
+  const { succeededIds, done, failed } = await trashFileIds(ids, (done, failed, total) => {
+    const pct = Math.round(((done + failed) / total) * 100);
+    els.deleteProgressFill.style.width = `${pct}%`;
+    els.deleteProgressText.textContent = `Trashed ${done}/${total}${failed ? `, ${failed} failed` : ""}…`;
+  });
 
   els.deleteProgressText.textContent = `Done: ${done} file${done === 1 ? "" : "s"} moved to Trash${
     failed ? `, ${failed} failed` : ""
@@ -1015,6 +1088,63 @@ async function trashSelected() {
   }, 800);
 
   els.trashSelectedBtn.disabled = false;
+}
+
+async function trashTimelineFiles(ids) {
+  showTimelineError("");
+  const lightboxFile = state.timelineItems[state.lightboxIndex];
+  const { succeededIds, failed } = await trashFileIds(ids);
+
+  if (failed > 0) {
+    showTimelineError(`${failed} file${failed === 1 ? "" : "s"} failed to move to Trash.`);
+  }
+
+  state.timelineItems = state.timelineItems.filter((f) => !succeededIds.has(f.id));
+  for (const id of succeededIds) state.timelineSelected.delete(id);
+  for (const id of succeededIds) {
+    els.timelineSections.querySelector(`.timeline-tile[data-file-id="${id}"]`)?.remove();
+  }
+  // Remove any date sections that are now empty.
+  for (const section of Array.from(els.timelineSections.children)) {
+    if (section.querySelector(".timeline-grid")?.children.length === 0) section.remove();
+  }
+  state.timelineRenderedCount = Math.max(0, state.timelineRenderedCount - succeededIds.size);
+
+  if (lightboxFile && succeededIds.has(lightboxFile.id)) closeLightbox();
+
+  if (state.timelineItems.length === 0) {
+    els.timelineEmptyCard.classList.remove("hidden");
+  }
+  updateTimelineToolbar();
+}
+
+function openTimelineDeleteConfirm(ids) {
+  if (ids.length === 0) return;
+  pendingDeleteIds = ids;
+  pendingDeleteSource = "timeline";
+  const idSet = new Set(ids);
+  const size = formatBytes(
+    state.timelineItems.filter((f) => idSet.has(f.id)).reduce((s, f) => s + Number(f.size || 0), 0)
+  );
+  els.confirmText.textContent = `This will move ${ids.length} file${ids.length === 1 ? "" : "s"} (${size}) to your Google Drive Trash.`;
+  els.confirmModal.classList.remove("hidden");
+}
+
+function updateTimelineToolbar() {
+  const count = state.timelineSelected.size;
+  els.timelineToolbar.classList.toggle("hidden", count === 0);
+  els.timelineSelectedCount.textContent = `${count} selected`;
+}
+
+function clearTimelineSelection() {
+  for (const id of state.timelineSelected) {
+    const tile = els.timelineSections.querySelector(`.timeline-tile[data-file-id="${id}"]`);
+    tile?.classList.remove("selected");
+    const cb = tile?.querySelector('input[type="checkbox"]');
+    if (cb) cb.checked = false;
+  }
+  state.timelineSelected.clear();
+  updateTimelineToolbar();
 }
 
 // Wire up events.
@@ -1050,6 +1180,23 @@ els.lightboxNextBtn.addEventListener("click", () => navigateLightbox(1));
 els.lightbox.addEventListener("click", (e) => {
   if (e.target === els.lightbox) closeLightbox();
 });
+els.lightboxDownloadBtn.addEventListener("click", () => {
+  const f = state.timelineItems[state.lightboxIndex];
+  if (f) downloadFile(f);
+});
+els.lightboxDeleteBtn.addEventListener("click", () => {
+  const f = state.timelineItems[state.lightboxIndex];
+  if (f) openTimelineDeleteConfirm([f.id]);
+});
+
+els.timelineDownloadSelectedBtn.addEventListener("click", () => {
+  const files = state.timelineItems.filter((f) => state.timelineSelected.has(f.id));
+  downloadFiles(files);
+});
+els.timelineDeleteSelectedBtn.addEventListener("click", () => {
+  openTimelineDeleteConfirm(Array.from(state.timelineSelected));
+});
+els.timelineClearSelectionBtn.addEventListener("click", clearTimelineSelection);
 window.addEventListener("keydown", (e) => {
   if (els.lightbox.classList.contains("hidden")) return;
   if (e.key === "Escape") closeLightbox();

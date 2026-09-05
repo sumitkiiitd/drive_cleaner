@@ -123,6 +123,13 @@
       <p>No photos or videos were found in your Drive.</p>
     </section>
 
+    <div id="timelineToolbar" class="timeline-toolbar hidden">
+      <span id="timelineSelectedCount" class="muted small">0 selected</span>
+      <button id="timelineDownloadSelectedBtn" class="btn btn-ghost" type="button">Download selected</button>
+      <button id="timelineDeleteSelectedBtn" class="btn btn-danger" type="button">Move selected to Trash</button>
+      <button id="timelineClearSelectionBtn" class="btn btn-ghost" type="button">Clear selection</button>
+    </div>
+
     <div id="timelineSections"></div>
     <div id="timelineSentinel"></div>
   </div>
@@ -168,6 +175,10 @@
     <div id="lightboxName" class="lightbox-name"></div>
     <div id="lightboxMeta" class="muted small"></div>
     <div id="lightboxPath" class="muted small"></div>
+    <div class="lightbox-actions">
+      <button id="lightboxDownloadBtn" class="btn btn-ghost" type="button">Download original</button>
+      <button id="lightboxDeleteBtn" class="btn btn-danger" type="button">Move to Trash</button>
+    </div>
   </div>
 </div>
 

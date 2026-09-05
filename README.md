@@ -53,8 +53,14 @@ even with a very large library.
 Click any tile to open a full-size lightbox with the file's name, date,
 size, and folder path (resolved on demand), and step through items with
 the on-screen arrows or your keyboard's left/right arrow keys (Escape
-closes it). This view is read-only — it's for browsing, not deleting; use
-the Duplicates tab to clean things up.
+closes it). From the lightbox you can **Download original** (fetches the
+file's actual stored bytes, not the resized preview thumbnail) or **Move
+to Trash** for that one file.
+
+Hover any tile in the grid to reveal a checkbox in its corner; selecting
+one or more shows a toolbar with **Download selected** and **Move
+selected to Trash**, so you can act on many files at once without leaving
+the grid.
 
 ## For end users
 
