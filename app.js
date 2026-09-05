@@ -49,10 +49,9 @@ const state = {
   activeCategory: "all",
   folderNameCache: new Map(), // folder id -> name
   activeView: "duplicates", // "duplicates" | "timeline"
-  timelineItems: [], // flat list of photo/video files, newest first (as returned by Drive)
-  timelinePageToken: null, // next page to fetch, or null when exhausted
+  timelineItems: [], // ALL photo/video files, sorted newest-first by true capture time
+  timelineRenderedCount: 0, // how many of timelineItems have been appended to the DOM so far
   timelineLoading: false,
-  timelineQuery: null, // the `q` string used for the current timeline session
   lightboxIndex: -1, // index into timelineItems currently shown in the lightbox
 };
 
@@ -107,7 +106,6 @@ const els = {
   timelineEmptyCard: el("timelineEmptyCard"),
   timelineSections: el("timelineSections"),
   timelineSentinel: el("timelineSentinel"),
-  timelineLoadingMore: el("timelineLoadingMore"),
   lightbox: el("lightbox"),
   lightboxCloseBtn: el("lightboxCloseBtn"),
   lightboxPrevBtn: el("lightboxPrevBtn"),
@@ -204,8 +202,7 @@ function signOut() {
   closeLightbox();
   state.accessToken = null;
   state.timelineItems = [];
-  state.timelinePageToken = null;
-  state.timelineQuery = null;
+  state.timelineRenderedCount = 0;
   els.signInBtn.classList.remove("hidden");
   els.signOutBtn.classList.add("hidden");
   els.resultsCard.classList.add("hidden");
@@ -458,55 +455,53 @@ function showTimelineError(message) {
   els.timelineScanError.classList.toggle("hidden", !message);
 }
 
-const TIMELINE_PAGE_SIZE = 200;
+const TIMELINE_FETCH_PAGE_SIZE = 1000; // Drive's max per request while fetching everything
+const TIMELINE_RENDER_BATCH_SIZE = 100; // tiles revealed per scroll/render step
 
 async function scanTimeline() {
   showTimelineError("");
   els.timelineEmptyCard.classList.add("hidden");
   els.timelineSections.innerHTML = "";
   state.timelineItems = [];
-  state.timelinePageToken = null;
-  state.timelineQuery = buildFilesQuery({
+  state.timelineRenderedCount = 0;
+  els.timelineScanBtn.disabled = true;
+  els.timelineScanProgress.classList.remove("hidden");
+  els.timelineScanProgressFill.style.width = "5%";
+  els.timelineScanProgressText.textContent = "Loading photos & videos…";
+
+  const q = buildFilesQuery({
     ownedOnly: els.timelineOwnedOnlyChk.checked,
     extraQuery: "(mimeType contains 'image/' or mimeType contains 'video/')",
   });
 
-  await loadMoreTimeline({ isFirstPage: true });
-}
-
-async function loadMoreTimeline({ isFirstPage = false } = {}) {
-  if (state.timelineLoading) return;
-  if (!isFirstPage && !state.timelinePageToken) return; // nothing more to load
-  state.timelineLoading = true;
-
-  if (isFirstPage) {
-    els.timelineScanBtn.disabled = true;
-    els.timelineScanProgress.classList.remove("hidden");
-    els.timelineScanProgressFill.style.width = "40%";
-    els.timelineScanProgressText.textContent = "Loading photos & videos…";
-  } else {
-    els.timelineLoadingMore.classList.remove("hidden");
-  }
-
   try {
-    const data = await fetchFilesPage({
-      q: state.timelineQuery,
-      pageToken: isFirstPage ? null : state.timelinePageToken,
-      pageSize: TIMELINE_PAGE_SIZE,
-      sharedDrives: false,
-      orderBy: "createdTime desc",
-    });
-    const newFiles = data.files || [];
-    for (const f of newFiles) f.category = categoryOf(f.mimeType);
-    state.timelineItems.push(...newFiles);
-    state.timelinePageToken = data.nextPageToken || null;
+    const all = [];
+    let pageToken = null;
+    const MAX_FILES = 50000;
+    do {
+      const data = await fetchFilesPage({
+        q,
+        pageToken,
+        pageSize: TIMELINE_FETCH_PAGE_SIZE,
+        sharedDrives: false,
+        orderBy: "createdTime desc",
+      });
+      all.push(...(data.files || []));
+      pageToken = data.nextPageToken || null;
+      els.timelineScanProgressText.textContent = `Loaded ${all.length} item${all.length === 1 ? "" : "s"}…`;
+      els.timelineScanProgressFill.style.width = `${Math.min(90, 10 + all.length / 50)}%`;
+    } while (pageToken && all.length < MAX_FILES);
 
-    if (isFirstPage) els.timelineScanProgressFill.style.width = "100%";
+    for (const f of all) f.category = categoryOf(f.mimeType);
+    all.sort((a, b) => (captureTime(b) || 0) - (captureTime(a) || 0));
+    state.timelineItems = all;
 
-    if (state.timelineItems.length === 0) {
+    els.timelineScanProgressFill.style.width = "100%";
+
+    if (all.length === 0) {
       els.timelineEmptyCard.classList.remove("hidden");
     } else {
-      appendTimelineItems(newFiles);
+      renderMoreTimeline();
     }
   } catch (err) {
     console.error(err);
@@ -520,13 +515,25 @@ async function loadMoreTimeline({ isFirstPage = false } = {}) {
       showTimelineError(err.message || "Something went wrong while loading the timeline.");
     }
   } finally {
-    state.timelineLoading = false;
-    els.timelineLoadingMore.classList.add("hidden");
-    if (isFirstPage) {
-      els.timelineScanBtn.disabled = false;
-      setTimeout(() => els.timelineScanProgress.classList.add("hidden"), 400);
-    }
+    els.timelineScanBtn.disabled = false;
+    setTimeout(() => els.timelineScanProgress.classList.add("hidden"), 400);
   }
+}
+
+// Reveals the next batch of already-fetched, already-sorted timeline items.
+// Nothing here talks to Drive — it's purely appending DOM for items we
+// already have in memory, keeping scroll responsive without re-fetching.
+function renderMoreTimeline() {
+  if (state.timelineLoading) return;
+  if (state.timelineRenderedCount >= state.timelineItems.length) return;
+  state.timelineLoading = true;
+
+  const start = state.timelineRenderedCount;
+  const end = Math.min(start + TIMELINE_RENDER_BATCH_SIZE, state.timelineItems.length);
+  appendTimelineItems(state.timelineItems.slice(start, end));
+  state.timelineRenderedCount = end;
+
+  state.timelineLoading = false;
 }
 
 function timelineSectionLabel(date) {
@@ -571,20 +578,14 @@ function buildTimelineTile(f) {
   return tile;
 }
 
-// Appends newly-fetched files to the existing DOM instead of rebuilding it,
-// so infinite scroll doesn't re-render (and re-request thumbnails for)
-// everything loaded so far. Drive paginates by createdTime (upload time),
-// not capture time, so a batch is re-sorted by capture time before display
-// — this keeps each loaded page internally in true chronological order even
-// though capture time and upload time can differ (e.g. importing an old
-// photo). Ordering across page boundaries still follows upload time.
-function appendTimelineItems(newFiles) {
-  const sorted = [...newFiles].sort((a, b) => (captureTime(b) || 0) - (captureTime(a) || 0));
-
+// Appends a batch of files (already globally sorted by capture time) to the
+// existing DOM instead of rebuilding it, so scrolling further doesn't
+// re-render — or re-request thumbnails for — everything shown so far.
+function appendTimelineItems(files) {
   let lastLabel = els.timelineSections.lastElementChild?.dataset.label || null;
   let lastGrid = els.timelineSections.lastElementChild?.querySelector(".timeline-grid") || null;
 
-  for (const f of sorted) {
+  for (const f of files) {
     const date = captureTime(f);
     const label = date ? timelineSectionLabel(date) : "Unknown date";
 
@@ -639,15 +640,14 @@ function closeLightbox() {
   state.lightboxIndex = -1;
 }
 
-async function navigateLightbox(delta) {
+function navigateLightbox(delta) {
   if (state.lightboxIndex === -1) return;
-  let next = state.lightboxIndex + delta;
-  if (next < 0) return;
-  if (next >= state.timelineItems.length) {
-    if (!state.timelinePageToken) return; // truly nothing more
-    await loadMoreTimeline({ isFirstPage: false });
-    if (next >= state.timelineItems.length) return; // still nothing after loading
-  }
+  const next = state.lightboxIndex + delta;
+  if (next < 0 || next >= state.timelineItems.length) return;
+  // Make sure the grid has rendered up through this item so it's already
+  // in the DOM (with a loaded thumbnail) by the time the user closes the
+  // lightbox and scrolls back to it.
+  while (state.timelineRenderedCount <= next) renderMoreTimeline();
   state.lightboxIndex = next;
   renderLightbox();
 }
@@ -697,9 +697,8 @@ function renderLightbox() {
   els.lightboxPath.textContent = f.path || "Loading path…";
   ensurePath(f);
 
-  const atLastLoaded = state.lightboxIndex >= state.timelineItems.length - 1;
   els.lightboxPrevBtn.disabled = state.lightboxIndex <= 0;
-  els.lightboxNextBtn.disabled = atLastLoaded && !state.timelinePageToken;
+  els.lightboxNextBtn.disabled = state.lightboxIndex >= state.timelineItems.length - 1;
 }
 
 function selectDefaultDuplicates(rule) {
@@ -1040,7 +1039,7 @@ els.timelineScanBtn.addEventListener("click", scanTimeline);
 
 const timelineObserver = new IntersectionObserver(
   (entries) => {
-    if (entries.some((e) => e.isIntersecting)) loadMoreTimeline({ isFirstPage: false });
+    if (entries.some((e) => e.isIntersecting)) renderMoreTimeline();
   },
   { rootMargin: "800px" }
 );
